@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sports Highlight Maker &amp; Extractor</title>
+<style>
+:root{--turf:#0f2a1f;--panel:#173a2b;--line:#2c5a43;--chalk:#f3f1e7;--mute:#a9bfb2;--paint:#f6d33b;--bad:#ff7a6b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--turf);color:var(--chalk);font:15px/1.45 "Segoe UI",system-ui,sans-serif}
+h1{font:700 22px "Avenir Next Condensed","Arial Narrow",Impact,sans-serif;letter-spacing:.02em;margin:0}
+header{display:flex;align-items:center;gap:16px;padding:14px 20px;border-bottom:2px solid var(--line)}
+header p{margin:0;color:var(--mute)}
+header{flex-wrap:wrap}
+.help{margin-top:14px}
+.help h2{font-size:16px;margin:0 0 8px}
+.help ol{margin:0;padding-left:22px}
+.help li{margin:0 0 7px}
+.help li:last-child{margin-bottom:0}
+.help .note{margin-top:10px}
+.help details{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+.help summary{cursor:pointer;font-weight:650}
+.help details ul{margin:8px 0 0;padding-left:20px}
+.help details li{margin-bottom:5px}
+.loadbar{margin:0 0 10px}
+#status{overflow-wrap:anywhere}
+main{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px;padding:18px 20px;max-width:1500px;margin:auto}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+.stage{background:#000;border:2px solid var(--line);position:relative;min-height:220px}
+canvas{position:absolute;inset:0;width:100%;height:100%;display:none;pointer-events:none}
+.stage{cursor:crosshair}
+.empty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:20px;color:var(--mute)}
+.empty[hidden]{display:none}
+video{display:block;width:100%;height:auto;background:#000}
+#diag{color:var(--mute);font-size:12px;margin:8px 0 0;font-variant-numeric:tabular-nums}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+button,.btn{background:var(--panel);color:var(--chalk);border:1.5px solid var(--line);padding:7px 12px;border-radius:6px;font:inherit;cursor:pointer}
+button:hover,.btn:hover{border-color:var(--paint)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--paint);outline-offset:2px}
+button.go{background:var(--paint);color:#1a2a10;border-color:var(--paint);font-weight:700}
+button:disabled{opacity:.45;cursor:not-allowed}
+input[type=range]{flex:1;min-width:140px;accent-color:var(--paint)}
+.time{font-variant-numeric:tabular-nums;color:var(--mute);min-width:110px;text-align:right}
+aside{display:flex;flex-direction:column;gap:14px}
+section{background:var(--panel);border:1.5px solid var(--line);border-radius:8px;padding:12px 14px}
+h2{font-size:15px;margin:0 0 8px}
+label{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:6px 0}
+select,input[type=number]{background:var(--turf);color:var(--chalk);border:1.5px solid var(--line);border-radius:5px;padding:4px 6px;font:inherit}
+input[type=color]{width:42px;height:28px;padding:0;border:none;background:none}
+#list{list-style:none;margin:0;padding:0;max-height:200px;overflow:auto}
+#list li{display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:5px;cursor:pointer}
+#list li.sel{background:var(--turf);outline:1.5px solid var(--paint)}
+#list li span{flex:1;font-variant-numeric:tabular-nums}
+#list button{padding:1px 8px}
+.note{color:var(--mute);font-size:13px;margin:6px 0 0}
+progress{width:100%;accent-color:var(--paint)}
+#status{min-height:1.4em;margin:6px 0 0}
+#status a{color:var(--paint)}
+</style>
+</head>
+<body>
+<header><h1>Sports Highlight Maker &amp; Extractor</h1><p>Spotlight the player. Trim the play. Export your highlight.</p></header>
+<main>
+<div>
+  <p id="msg" style="margin:0 0 10px;font-weight:600"></p>
+  <div class="bar loadbar">
+    <button id="loadAnother">Load another video</button>
+  </div>
+  <div class="stage" id="stage">
+    <video id="v" playsinline preload="auto"></video>
+    <canvas id="cv" width="960" height="540"></canvas>
+    <div class="empty" id="empty"><div><p><b>Load a game video to begin.</b></p><label class="btn" style="display:inline-block">Choose video file<input id="vfile" type="file" accept="video/*" hidden></label><p class="note">Pause on a play, then click the player to place a circle.</p><p id="emsg" style="color:var(--bad);max-width:460px;margin:10px auto 0"></p></div></div>
+  </div>
+  <audio id="a" loop></audio>
+  <div class="bar">
+    <button id="play" disabled>Play</button>
+    <button id="b1" disabled title="Back 1 second (Shift+Left)">-1s</button>
+    <button id="bf" disabled title="Back 1 frame (Left)">-1f</button>
+    <button id="ff" disabled title="Forward 1 frame (Right)">+1f</button>
+    <button id="f1" disabled title="Forward 1 second (Shift+Right)">+1s</button>
+    <input id="seek" type="range" min="0" max="1" step="0.01" value="0" disabled aria-label="Seek">
+    <span class="time" id="time">0:00.00 / 0:00.00</span>
+  </div>
+  <div class="bar">
+    <button id="setIn" disabled title="Set the point where you want your highlight to begin.">Set start here</button>
+    <button id="setOut" disabled title="Set the point where you want your highlight to end.">Set end here</button>
+    <span class="note" id="trim" style="margin:0"></span>
+  </div>
+  <p id="diag"></p>
+  <section class="help">
+    <h2>How to Make a Highlight</h2>
+    <ol>
+      <li><strong>Load your game video.</strong> Choose the footage you want to work with.</li>
+      <li><strong>Find the play.</strong> Pause the video at the moment you want to highlight. Use the frame-step buttons or arrow keys to fine-tune the position.</li>
+      <li><strong>Add the spotlight.</strong> Click on the player in the video, then adjust the highlight size and color.</li>
+      <li><strong>Trim the clip.</strong> Set the start and end points around the play you want to keep.</li>
+      <li><strong>Export your highlight.</strong> The app records the selected section and downloads the finished clip.</li>
+    </ol>
+    <p class="note">Tip: Click a timestamp in <strong>Highlight Size Adjust</strong> to jump to that spotlight. Use its <strong>Remove</strong> button to delete just that one, or <strong>Remove all</strong> to clear every spotlight.</p>
+    <details>
+      <summary>Video stuttering or not playing correctly?</summary>
+      <p class="note">Some videos need to be converted before they will play smoothly. Use the free HandBrake video converter and try these settings:</p>
+      <ul>
+        <li><strong>Summary:</strong> Set Format to MP4 and check <strong>Web Optimized</strong>.</li>
+        <li><strong>Video:</strong> Set Encoder to H.264 (x264) and select <strong>Constant Framerate</strong>.</li>
+        <li><strong>Enhanced Settings</strong> (under Video): Enter <code>keyint=30:min-keyint=30</code>.</li>
+        <li><strong>Audio:</strong> Make sure Source and Codec are both AAC.</li>
+      </ul>
+    </details>
+    <p class="note">Keyboard shortcuts: Space plays or pauses; Left and Right arrows step one frame. Hold Shift with an arrow key to move one second.</p>
+  </section>
+</div>
+<aside>
+  <section>
+    <h2>Highlight Size Adjust</h2>
+    <ul id="list"></ul>
+    <p class="note" id="none">None yet.</p>
+    <label>Size of selected <input id="size" type="range" min="2" max="14" step="0.5" value="5"></label>
+    <button id="clear">Remove all</button>
+  </section>
+  <section>
+    <h2>Highlight</h2>
+    <label>Color <input id="color" type="color" value="#f6d33b"></label>
+    <label>Video Freeze (seconds) <input id="freeze" type="number" min="0.5" max="10" step="0.5" value="2" style="width:70px"></label>
+  </section>
+  <section>
+    <h2>Audio</h2>
+    <label>Keep game audio <input id="keep" type="checkbox" checked></label>
+    <label class="btn" style="display:block;text-align:center">Add music file (optional)<input id="mfile" type="file" accept="audio/*" hidden></label>
+    <p class="note" id="mname">No music selected.</p>
+    <label>Music volume <input id="mvol" type="range" min="0" max="1" step="0.05" value="0.3"></label>
+  </section>
+  <section>
+    <h2>Export</h2>
+    <button class="go" id="export" disabled>Export video</button>
+    <button id="cancel" hidden>Cancel</button>
+    <progress id="prog" value="0" max="1" hidden></progress>
+    <p id="status" role="status"></p>
+    <p class="note">Export records in real time, so it takes as long as the finished video. Keep this tab visible while it runs.</p>
+  </section>
+</aside>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const v=$('v'),a=$('a'),cv=$('cv'),g=cv.getContext('2d');
+let W=cv.width,H=cv.height,circles=[],selC=null,frozen=null,exporting=false,rec=null,chunks=[],startT=0,endT=0,aud=null,ext='webm';
+const fmt=s=>{s=Math.max(0,s||0);return Math.floor(s/60)+':'+(s%60).toFixed(2).padStart(5,'0')};
+const ctrls=['play','b1','bf','ff','f1','seek','setIn','setOut','export'];
+
+/* ---------- loading ---------- */
+$('loadAnother').onclick=()=>{
+  if(v.src && !confirm('Load another video? Your current spotlights and selected music will be cleared.')) return;
+  $('vfile').value='';
+  $('vfile').click();
+};
+$('vfile').onchange=e=>{
+  const f=e.target.files[0]; if(!f) return;
+  $('emsg').textContent='Loading '+f.name+'...';
+  $('msg').textContent='';$('msg').style.color='';
+  $('status').textContent='';
+  circles=[]; selC=null; frozen=null; startT=0; endT=0;
+  $('size').value=5; $('color').value='#f6d33b'; $('freeze').value=2;
+  a.pause(); a.removeAttribute('src'); a.load();
+  $('mfile').value=''; $('mname').textContent='No music selected.';
+  $('keep').checked=true; $('mvol').value=0.3;
+  renderList();
+  sniff(f).then(c=>{
+    codec=c;
+    const hevcOK=v.canPlayType('video/mp4; codecs="hvc1.1.6.L93.B0"')!=='';
+    if(c.startsWith('HEVC')&&!hevcOK){
+      $('msg').style.color='var(--bad)';
+      $('msg').textContent='This file uses HEVC (H.265) video, which this browser cannot decode. That is why the player stays black. Convert it to H.264 with HandBrake (free, preset "Fast 1080p30"), or install "HEVC Video Extensions" from the Microsoft Store.';
+    }else $('msg').textContent='Detected video codec: '+c;
+  });
+  v.src=URL.createObjectURL(f); v.load(); renderList();
+};
+let codec='',lastDiag=0;
+async function sniff(f){
+  const n=2*1024*1024,parts=[f.slice(0,n)];
+  if(f.size>n)parts.push(f.slice(Math.max(n,f.size-n)));
+  let s='';
+  for(const p of parts)s+=new TextDecoder('latin1').decode(await p.arrayBuffer());
+  const has=k=>s.includes(k);
+  return (has('hvc1')||has('hev1'))?'HEVC (H.265)':has('avc1')?'H.264':has('av01')?'AV1':has('vp09')?'VP9':'unknown';
+}
+setInterval(()=>{
+  if(v.videoWidth&&v.readyState<2&&!exporting&&!$('msg').textContent.startsWith('This file uses HEVC')){
+    $('msg').style.color='var(--bad)';
+    $('msg').textContent='The browser read this file but cannot show its video frames (detected: '+(codec||'unknown')+'). Try converting it to H.264 MP4 with HandBrake.';
+  }
+},2500);
+v.onerror=()=>{
+  $('empty').hidden=false;
+  $('emsg').textContent='Edge could not decode this file. The video is probably HEVC (H.265), which phones and many cameras record. Convert it to H.264 MP4 with HandBrake (free), or install the "HEVC Video Extensions" from the Microsoft Store, then try again.';
+};
+v.onloadedmetadata=()=>{
+  const s=Math.min(1,1920/v.videoWidth);
+  W=cv.width=Math.round(v.videoWidth*s)&~1; H=cv.height=Math.round(v.videoHeight*s)&~1;
+  startT=0; endT=v.duration; $('seek').max=v.duration;
+  ctrls.forEach(i=>$(i).disabled=false); $('empty').hidden=true; v.currentTime=0; updateTrim();
+};
+$('mfile').onchange=e=>{
+  const f=e.target.files[0]; if(!f) return;
+  a.src=URL.createObjectURL(f); $('mname').textContent=f.name;
+};
+
+/* ---------- transport ---------- */
+function toggle(){
+  if(exporting||!v.videoWidth) return;
+  if(frozen){frozen.c.done=true;frozen=null;v.play();return}
+  if(v.paused){v.play().catch(err=>{$('diag').textContent='Play failed: '+err.message})}else v.pause();
+}
+$('play').onclick=toggle;
+const step=d=>{if(exporting)return;frozen=null;v.pause();v.currentTime=Math.min(v.duration,Math.max(0,v.currentTime+d))};
+$('b1').onclick=()=>step(-1);$('bf').onclick=()=>step(-1/30);$('ff').onclick=()=>step(1/30);$('f1').onclick=()=>step(1);
+$('seek').oninput=e=>{if(exporting)return;frozen=null;v.pause();v.currentTime=+e.target.value};
+v.onseeked=()=>{if(!exporting)resetDone()};
+function resetDone(){const t=v.currentTime;circles.forEach(c=>c.done=c.t<t-0.04)}
+$('setIn').onclick=()=>{startT=Math.min(v.currentTime,endT-0.1);updateTrim()};
+$('setOut').onclick=()=>{endT=Math.max(v.currentTime,startT+0.1);updateTrim()};
+function updateTrim(){$('trim').textContent='Export range: '+fmt(startT)+' to '+fmt(endT)}
+document.addEventListener('keydown',e=>{
+  if(['INPUT','SELECT'].includes(e.target.tagName)&&e.target.type!=='range')return;
+  if(e.code==='Space'){e.preventDefault();toggle()}
+  else if(e.code==='ArrowLeft'){e.preventDefault();step(e.shiftKey?-1:-1/30)}
+  else if(e.code==='ArrowRight'){e.preventDefault();step(e.shiftKey?1:1/30)}
+});
+
+/* ---------- circles ---------- */
+$('stage').onclick=e=>{
+  if(!v.videoWidth||!v.paused||exporting||frozen) return;
+  const r=v.getBoundingClientRect(),x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height,t=v.currentTime;
+  let c=circles.find(c=>Math.abs(c.t-t)<0.06);
+  if(c){c.x=x;c.y=y}else{c={t,x,y,r:+$('size').value,done:true};circles.push(c);circles.sort((p,q)=>p.t-q.t)}
+  selC=c;renderList();
+};
+function renderList(){
+  const ul=$('list');ul.innerHTML='';
+  circles.forEach(c=>{
+    const li=document.createElement('li');if(c===selC)li.className='sel';
+    li.innerHTML='<span>'+fmt(c.t)+'</span>';
+    const d=document.createElement('button');d.textContent='Remove';d.setAttribute('aria-label','Remove circle at '+fmt(c.t));
+    d.onclick=ev=>{ev.stopPropagation();circles=circles.filter(x=>x!==c);if(selC===c)selC=null;renderList()};
+    li.appendChild(d);
+    li.onclick=()=>{if(exporting)return;selC=c;frozen=null;v.pause();v.currentTime=c.t;renderList();$('size').value=c.r};
+    ul.appendChild(li);
+  });
+  $('none').hidden=circles.length>0;
+}
+$('size').oninput=e=>{if(selC)selC.r=+e.target.value};
+$('clear').onclick=()=>{if(!exporting){circles=[];selC=null;renderList()}};
+
+/* ---------- drawing ---------- */
+function drawCircle(c,p){
+  const m=Math.min(W,H)/100,r=c.r*m*(1+(1-p)*0.8),x=c.x*W,y=c.y*H;
+  g.save();g.globalAlpha=p;g.strokeStyle=$('color').value;g.lineWidth=Math.max(3,r*0.16);
+  g.fillStyle='rgba(0,0,0,.55)';g.beginPath();g.rect(0,0,W,H);g.arc(x,y,r*1.6,0,7);g.fill('evenodd');
+  g.shadowColor='rgba(0,0,0,.7)';g.shadowBlur=8;g.beginPath();
+  g.arc(x,y,r,0,7);g.stroke();
+  g.restore();
+}
+function draw(now){
+  let list=[],p=1;
+  if(frozen){list=[frozen.c];p=Math.min(1,(now-frozen.start)/250)}
+  else if(v.paused&&!exporting){list=circles.filter(c=>Math.abs(c.t-v.currentTime)<0.06)}
+  if(exporting||list.length){
+    if(cv.style.display==='none')cv.style.display='block';
+    if(exporting){if(v.readyState>=2)g.drawImage(v,0,0,W,H)}
+    else g.clearRect(0,0,W,H);
+    list.forEach(c=>drawCircle(c,p));
+  }else if(cv.style.display!=='none')cv.style.display='none';
+  if(now-lastDiag>300){lastDiag=now;
+    $('diag').textContent='Video state '+v.readyState+'/4 | '+v.videoWidth+'x'+v.videoHeight+' | '+(v.error?'error code '+v.error.code:'no error')+' | '+(v.paused?'paused':'playing')}
+}
+function loop(now){
+  requestAnimationFrame(loop);
+  if(!v.videoWidth) return;
+  if(frozen){
+    if(now-frozen.start>=(+$('freeze').value||2)*1000){frozen.c.done=true;frozen=null;v.play()}
+  }else if(!v.paused){
+    const c=circles.find(c=>!c.done&&v.currentTime>=c.t-0.02);
+    if(c){v.pause();frozen={c,start:now}}
+  }
+  if(exporting&&!frozen&&(v.currentTime>=endT-0.03||v.ended)) finishExport(false);
+  draw(now);
+  $('time').textContent=fmt(v.currentTime)+' / '+fmt(v.duration);
+  if(document.activeElement!==$('seek'))$('seek').value=v.currentTime;
+  $('play').textContent=(v.paused&&!frozen)?'Play':(frozen?'Skip freeze':'Pause');
+  if(exporting)$('prog').value=Math.min(1,(v.currentTime-startT)/Math.max(.1,endT-startT));
+}
+requestAnimationFrame(loop);
+
+/* ---------- audio graph (built once) ---------- */
+function ctx(){
+  if(aud) return aud.c;
+  const c=new AudioContext(),dest=c.createMediaStreamDestination(),mon=c.createGain();
+  mon.connect(c.destination);
+  const vg=c.createGain(),vs=c.createMediaElementSource(v);vs.connect(vg);vg.connect(dest);vg.connect(mon);
+  const mg=c.createGain(),ms=c.createMediaElementSource(a);ms.connect(mg);mg.connect(dest);mg.connect(mon);
+  aud={c,dest,mon,vg,mg};return c;
+}
+
+/* ---------- export ---------- */
+async function startExport(){
+  if(!v.videoWidth||exporting) return;
+  if(typeof MediaRecorder==='undefined'){$('status').textContent='This browser cannot record video. Use a current Chrome, Edge, or Firefox.';return}
+  ctx().resume();v.pause();frozen=null;
+  const types=['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
+  const mime=types.find(t=>MediaRecorder.isTypeSupported(t));
+  ext=mime.startsWith('video/mp4')?'mp4':'webm';
+  await new Promise(r=>{v.onseeked=r;v.currentTime=startT});
+  v.onseeked=()=>{if(!exporting)resetDone()};
+  resetDone();
+  aud.vg.gain.value=$('keep').checked?1:0;
+  aud.mg.gain.value=a.src?+$('mvol').value:0;
+  aud.mon.gain.value=0;
+  const stream=cv.captureStream(30);
+  aud.dest.stream.getAudioTracks().forEach(t=>stream.addTrack(t));
+  chunks=[];rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:8e6});
+  rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+  exporting=true;
+  $('export').disabled=true;$('cancel').hidden=false;$('prog').hidden=false;
+  $('status').textContent='Recording '+ext.toUpperCase()+'...';
+  rec.start(500);
+  if(a.src){a.currentTime=0;a.play()}
+  v.play();
+}
+function finishExport(cancel){
+  if(!exporting) return;
+  exporting=false;v.pause();a.pause();aud.mon.gain.value=1;aud.vg.gain.value=1;
+  $('cancel').hidden=true;$('prog').hidden=true;$('export').disabled=false;
+  rec.onstop=()=>{
+    if(cancel){$('status').textContent='Export cancelled.';return}
+    const url=URL.createObjectURL(new Blob(chunks,{type:rec.mimeType}));
+    const el=document.createElement('a');el.href=url;el.download='highlight.'+ext;
+    el.click();
+    $('status').textContent='Export complete: highlight.'+ext+' — check your Downloads folder.';
+  };
+  rec.stop();
+}
+$('export').onclick=startExport;
+$('cancel').onclick=()=>finishExport(true);
+renderList();
+</script>
+</body>
+</html>
